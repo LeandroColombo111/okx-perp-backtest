@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "okx-perp-backtest"
+version = "0.1.0"
+description = "Friction-aware backtesting engine for OKX crypto perpetual futures: real funding, book-aware slippage, real fees, liquidation, Monte Carlo, walk-forward."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
