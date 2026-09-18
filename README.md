@@ -15,29 +15,33 @@ not enough evidence to risk capital on.
 
 - **Funding** settled at OKX's exact UTC instants (00:00 / 08:00 / 16:00),
   not smeared across every candle.
-- **Slippage** as market impact, not a flat percentage: it walks a real
-  order book when historical L2 depth is available, and falls back to a
-  square-root impact model (calibratable against your own live fill data)
-  when it isn't.
-- **Fees** from OKX's real maker/taker schedule, keyed by the simulated
-  order type of each fill (a breakout entry is a taker fill; a limit target
-  is a maker fill).
+- **Slippage** as market impact, not a flat percentage: the model walks an
+  order book through the `LiquidityBook` interface when one is plugged in,
+  and otherwise uses a square-root impact model whose constant you calibrate
+  against your own fills. No book data loader ships with this repo, so out of
+  the box it always uses the impact model (see Known limitations).
+- **Fees** from OKX's public regular-tier maker/taker schedule for USDT
+  perpetuals (2 / 5 bps), keyed by the simulated order type of each fill (a
+  breakout entry is a taker fill; a limit target is a maker fill). Liquidations
+  are billed at the taker rate, as OKX does.
 - **Liquidation** as a distinct event from your strategy's own stop-loss:
-  the exchange force-closes you when margin falls below the tiered
-  maintenance requirement, regardless of what your stop says.
+  the exchange force-closes you when margin falls below a tiered maintenance
+  requirement, regardless of what your stop says. Isolated margin only, and the
+  tier table is a placeholder, not live OKX data (see Known limitations).
 
 ## What it answers beyond a single Sharpe number
 
 - **Monte Carlo** over the closed trade sequence: bootstrap resampling,
-  order shuffling, and entry/exit timing perturbation, producing a
+  order shuffling, and a latency test that delays the whole signal by a
+  few bars and re-simulates, producing a
   *distribution* of Sharpe ratios (p5/p50/p95, and P(Sharpe < your
   threshold)) instead of one point estimate that could be a lucky sequence.
 - **Walk-forward analysis**: rolling train/test windows comparing in-sample
   vs out-of-sample performance, to catch overfitting to the past before it
   costs real money.
 - **A flat report schema** (equity curve, drawdown, per-trade return
-  distribution, Monte Carlo summary) ready to insert into BigQuery to
-  compare runs against each other over time.
+  distribution, Monte Carlo summary) shaped as rows you can load into
+  BigQuery to compare runs over time. The upload itself is not included.
 
 ## Case study: what it found in a real bot
 
@@ -84,6 +88,47 @@ built to validate is not included; the engine is strategy-agnostic by
 design, so plug in your own signal generator (see the docstring in
 `execution.ExecutionSimulator.step` for the exact column contract it
 expects: `signal`, `anchor`, `atr`).
+
+## Known limitations
+
+Read these before trusting a number from this engine.
+
+- **No order book data ships with it.** The book-walk logic and the
+  `LiquidityBook` interface exist and are unit tested, but nothing loads
+  historical L2 data, so the default `NullLiquidityBook` makes every fill use
+  the impact model. OKX's own historical book coverage also has gaps.
+- **`impact_k` is an uncalibrated placeholder (1.0).** Calibrate it from your
+  own fills. In the author's BTC runs at 1x exposure the result barely moved
+  between `impact_k=0` and `10`, but that will not hold for larger sizes or
+  thinner markets.
+- **The liquidation tier table is a placeholder shape, not live OKX data.**
+  Refresh it from OKX before trusting a liquidation distance. It also ignores
+  the entry fee already paid, so liquidation looks marginally farther away than
+  it is.
+- **Isolated margin only.** Cross margin raises `NotImplementedError` instead of
+  being simulated badly.
+- **Regular fee tier only.** No VIP levels, rebates or token discounts.
+- **Funding uses the bar's open as the mark price**, an approximation.
+- **One instrument, one position at a time.** No portfolios or hedged legs.
+- **Monte Carlo resamples percentage returns on the original time skeleton.**
+  Compounding-order effects are ignored, and the latency test only delays
+  signals (advancing them would look ahead).
+- **Walk-forward with fixed parameters measures stability, not prediction,** if
+  those parameters were chosen on the same history. Trying many variants on one
+  history inflates the chance that one looks good by luck.
+- **The tests use synthetic data.** The real-market numbers in the case study
+  came from private runs on real OKX data and are not reproducible from this
+  repo alone. The buy-and-hold comparisons there exclude fees and funding.
+
+## Roadmap
+
+In the order I would do them:
+
+1. Load OKX's position tiers from its public endpoint instead of the placeholder table.
+2. A loader for OKX historical L2 book data, with explicit handling of the coverage gaps.
+3. Calibrate `impact_k` from real fills once a bot has enough of them.
+4. Cross margin and multi-position accounts.
+5. A BigQuery uploader for the report rows.
 
 ## Status
 
