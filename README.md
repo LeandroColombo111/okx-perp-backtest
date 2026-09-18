@@ -1,5 +1,7 @@
 # okx-perp-backtest
 
+[![tests](https://github.com/LeandroColombo111/okx-perp-backtest/actions/workflows/tests.yml/badge.svg)](https://github.com/LeandroColombo111/okx-perp-backtest/actions/workflows/tests.yml)
+
 A backtesting engine for OKX crypto perpetual futures that models real trading
 friction instead of assuming frictionless fills at the close price.
 
@@ -37,6 +39,43 @@ not enough evidence to risk capital on.
   distribution, Monte Carlo summary) ready to insert into BigQuery to
   compare runs against each other over time.
 
+## Case study: what it found in a real bot
+
+The engine was built to validate a long/short BTC perpetuals bot that runs in
+demo/paper trading. Running it changed what I believed about that bot. All
+figures are backtests on BTC, 14 rolling 90-day windows, parameters fixed (never
+re-optimized per window), identical warmup for every variant, compared against
+buy-and-hold on the same windows. They are not live results.
+
+- **The bot was in the market only ~15% of the time.** In the quarters where BTC
+  rose, buy-and-hold made about +34% on average and the bot about +3%. In the
+  quarters where BTC fell, buy-and-hold lost about -17% and the bot made about
+  +4%. It protects capital but captures roughly a tenth of the upside.
+- **It does not beat buy-and-hold on return** (about +57% vs +192% over the
+  same windows), though its worst window was far smaller (-11% vs -27%). On
+  ETH and SOL it showed no risk-adjusted edge.
+- **A hybrid is the realistic use.** Half buy-and-hold, half bot cut the worst
+  drawdown from about 54% to 24% for a return of +143% instead of +192%. The
+  confidence interval on the Sharpe improvement includes zero, so this is
+  suggestive, not proof.
+- **Ideas that looked good did not survive checking.** About 44 variants were
+  tried on the same history, which inflates the odds that something looks good
+  by luck. A faster-entry variant that was the best on BTC did worse on ETH and
+  SOL and on neighbouring parameter values, so it was rejected.
+
+## A mistake this tool caught in its own author
+
+An early result said the bot "fails out of sample" and that a macro filter fixed
+it. Both claims came from an unfair comparison: the baseline was run with no
+warmup and the variant with warmup. With no history before each 90-day test
+window, the baseline's slow indicators never converged and it barely traded.
+Compared like-for-like, the baseline was slightly *better* than the "improved"
+version. The conclusion was retracted before anything was changed.
+
+That is why `WalkForwardEngine.run()` takes a `warmup` argument, why
+`tests/test_walkforward.py` has a regression test for exactly this failure, and
+why the docstring says every variant you compare must use the same warmup.
+
 ## What's intentionally NOT here
 
 The `example_signal.py` module is a bare EMA crossover — just enough to
@@ -56,7 +95,8 @@ system, and nothing here places real orders.
 ## Quick start
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
+python -m pytest -q      # 24 tests
 python examples/demo.py
 ```
 
@@ -64,7 +104,7 @@ The demo generates synthetic OHLCV data (no API keys or network access
 needed) and runs the full pipeline: execution with friction models → Monte
 Carlo → walk-forward → report.
 
-## Layout
+## Layout (tests in `tests/`)
 
 ```
 src/okx_perp_backtest/

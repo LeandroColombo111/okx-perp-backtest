@@ -39,6 +39,8 @@ def synthetic_bars(n_hours=24 * 220, seed=3) -> pd.DataFrame:
 
 
 def main():
+    print("Synthetic random-walk data and a toy signal: negative or noisy results are EXPECTED here.")
+    print("This demo shows the plumbing (frictions, Monte Carlo, walk-forward, report), not a strategy.\n")
     bars = synthetic_bars()
     risk = Risk(capital=10000., fraction=.02, fee_bps=6., slippage_bps=3., max_exposure=1., max_drawdown=.25)
     params = ExampleParams()
@@ -62,8 +64,10 @@ def main():
 
     wf = WalkForwardEngine(sim, signal_fn=example_signal)
     grid = [ExampleParams(fast=12, slow=48), ExampleParams(fast=8, slow=32)]
+    # warmup gives each window's indicators history before it starts; use the same value for every variant you compare.
     wf_results = wf.run(bars, grid, risk, train_span=pd.Timedelta(days=90),
-                         test_span=pd.Timedelta(days=30), step=pd.Timedelta(days=30))
+                         test_span=pd.Timedelta(days=30), step=pd.Timedelta(days=30),
+                         warmup=pd.Timedelta(days=30))
     print(f"3) walk-forward   -> {len(wf_results)} windows")
     print(wf_results[["train_start", "test_start", "in_sample_sharpe", "out_of_sample_sharpe"]].to_string(index=False))
 

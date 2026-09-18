@@ -3,10 +3,13 @@
 A large in-sample vs out-of-sample gap across windows is the signature of
 overfitting to the past rather than a genuine edge.
 
-Known simplification: each window is sliced directly from bars, so
-indicators near a window's start (EMA/ATR warm-up) see less history than
-they would in a single continuous run. Pad train_start backward by a
-warm-up buffer before slicing if that edge effect starts to matter.
+Pass warmup (a pd.Timedelta) to run() whenever a signal needs more lookback
+than train_span/test_span alone provide. Without it each window is sliced
+and the indicators are computed from scratch inside the slice, so a slow
+indicator never converges and the strategy silently trades on unconverged
+signals, or not at all. warmup extends what signal_fn sees without changing
+what is scored (see run()'s docstring). Every variant you compare must use
+the same warmup, or the comparison is not like-for-like.
 """
 from dataclasses import dataclass
 from typing import Callable
@@ -43,25 +46,34 @@ class WalkForwardEngine:
         return out
 
     def run(self, bars: pd.DataFrame, param_grid: list, risk: Risk,
-            train_span: pd.Timedelta, test_span: pd.Timedelta, step: pd.Timedelta) -> pd.DataFrame:
-        """Per window: params selected in-sample, and the Sharpe/return achieved both in-sample and out-of-sample with them."""
+            train_span: pd.Timedelta, test_span: pd.Timedelta, step: pd.Timedelta,
+            warmup: pd.Timedelta = pd.Timedelta(0)) -> pd.DataFrame:
+        """Per window: params selected in-sample, and the Sharpe/return achieved both in-sample and out-of-sample with them.
+
+        warmup extends each slice backward before signal_fn sees it.
+        ExecutionSimulator.run's start/end still restrict what is scored to
+        the true window, so the warmup period only feeds indicators and is
+        never counted as a trade.
+        """
         if not param_grid:
             raise ValueError("param_grid cannot be empty")
         rows = []
         for train_range, test_range in self.windows(bars.index, train_span, test_span, step):
-            train_bars = bars.loc[train_range[0]:train_range[1]]
-            test_bars = bars.loc[test_range[0]:test_range[1]]
+            train_bars = bars.loc[train_range[0] - warmup:train_range[1]]
+            test_bars = bars.loc[test_range[0] - warmup:test_range[1]]
             if train_bars.empty or test_bars.empty:
                 continue
             best_params, best_metrics = None, None
             for candidate in param_grid:
                 train_signal = self.signal_fn(train_bars, candidate)
-                equity, trades, _ = self.execution_simulator.run(train_bars, train_signal, candidate, risk)
+                equity, trades, _ = self.execution_simulator.run(
+                    train_bars, train_signal, candidate, risk, start=train_range[0], end=train_range[1])
                 candidate_metrics = metrics(equity, trades, risk.capital)
                 if best_metrics is None or candidate_metrics["sharpe"] > best_metrics["sharpe"]:
                     best_params, best_metrics = candidate, candidate_metrics
             test_signal = self.signal_fn(test_bars, best_params)
-            test_equity, test_trades, _ = self.execution_simulator.run(test_bars, test_signal, best_params, risk)
+            test_equity, test_trades, _ = self.execution_simulator.run(
+                test_bars, test_signal, best_params, risk, start=test_range[0], end=test_range[1])
             test_metrics = metrics(test_equity, test_trades, risk.capital)
             rows.append({
                 "train_start": train_range[0], "train_end": train_range[1],
