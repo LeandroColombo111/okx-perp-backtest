@@ -19,10 +19,11 @@ def make_bars(days=300, seed=3):
     funding = np.zeros(n)
     instants = np.isin(idx.hour, [0, 8, 16]) & (idx.minute == 0)
     funding[instants] = rng.normal(0.0001, 0.00005, instants.sum())
+    openp = close + rng.normal(0, 15, n)
     return pd.DataFrame({
-        "open": close + rng.normal(0, 15, n),
-        "high": close + rng.uniform(10, 60, n),
-        "low": close - rng.uniform(10, 60, n),
+        "open": openp,
+        "high": np.maximum(openp, close) + rng.uniform(10, 60, n),
+        "low": np.minimum(openp, close) - rng.uniform(10, 60, n),
         "close": close,
         "volume": rng.uniform(200, 800, n),
         "funding": funding,

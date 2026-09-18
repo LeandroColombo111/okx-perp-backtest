@@ -132,6 +132,7 @@ In the order I would do them:
 3. Calibrate `impact_k` from real fills once a bot has enough of them.
 4. Cross margin and multi-position accounts.
 5. A BigQuery uploader for the report rows.
+6. A loader for OKX candles and funding history into the bar format above.
 
 ## Status
 
@@ -144,7 +145,7 @@ system, and nothing here places real orders.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q      # 30 tests
+python -m pytest -q      # 44 tests
 python examples/demo.py
 ```
 
@@ -152,10 +153,48 @@ The demo generates synthetic OHLCV data (no API keys or network access
 needed) and runs the full pipeline: execution with friction models → Monte
 Carlo → walk-forward → report.
 
+## Use it with your own data and signal
+
+**1. Bars.** A `DataFrame` of 1h candles, indexed by the bar's **open** time in UTC:
+
+| column | meaning |
+|---|---|
+| `open` `high` `low` `close` | prices |
+| `volume` | traded volume in base units (the slippage model sizes impact against it) |
+| `funding` | OKX funding rate as a **fraction** per 8h (`0.0001` = 0.01%; positive means longs pay). Read only on bars opening at 00:00, 08:00 and 16:00 UTC, so it may be `0` elsewhere |
+
+```python
+bars = pd.read_csv("btc_1h.csv", index_col="time", parse_dates=True)
+bars.index = pd.to_datetime(bars.index, utc=True)
+validate_bars(bars)   # raises one error listing every problem: gaps, timezone, NaN, bad OHLC, percent-style funding...
+```
+
+**2. Signal.** A `DataFrame` on the same index with three columns:
+
+| column | meaning |
+|---|---|
+| `signal` | desired entry: `+1` long, `-1` short, `0` none |
+| `anchor` | higher-timeframe trend (`+1`/`-1`/`0`); an open position is closed when it stops agreeing. With no such trend, pass the same series as `signal` |
+| `atr` | volatility in price units; sets the stop distance (`stop_atr * atr`). Must be `> 0` wherever `signal != 0` |
+
+Row *i* may use only information up to the **close** of bar *i*; the engine acts on it at the **open** of bar *i+1*. Calling
+`validate_signal(signal, bars)` checks the contract, and `run()` refuses a signal whose index differs from the bars.
+
+**3. Params.** Any object exposing `stop_atr`, `trail_atr`, `reward`, `trail_start_r` and `max_hours`
+(a dataclass works). See [`examples/own_signal.py`](examples/own_signal.py) for a complete, runnable
+example that wires a custom signal through validation, the friction models and the metrics:
+
+```bash
+python examples/own_signal.py
+```
+
+When you compare variants in walk-forward, give every one the same `warmup` (see the case study above).
+
 ## Layout (tests in `tests/`)
 
 ```
 src/okx_perp_backtest/
+├── data.py             # validate_bars / validate_signal: input checks with actionable errors
 ├── account.py          # Risk/Account dataclasses, position sizing, Sharpe/drawdown metrics
 ├── example_signal.py   # placeholder signal (NOT a production strategy)
 ├── execution.py         # ExecutionSimulator: orchestrates funding/liquidation/fees/slippage per bar

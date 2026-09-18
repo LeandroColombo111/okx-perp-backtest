@@ -149,6 +149,9 @@ class ExecutionSimulator:
     def run(self, bars: pd.DataFrame, signal: pd.DataFrame, p, risk: Risk,
             start=None, end=None) -> tuple[pd.Series, list[dict], dict]:
         """Runs every bar in [start, end): equity curve, trade list, final account state."""
+        if not signal.index.equals(bars.index):
+            raise ValueError("signal index must equal bars index; see data.validate_signal")
+
         def utc(t):
             t = pd.Timestamp(t)
             return t.tz_localize("UTC") if t.tzinfo is None else t

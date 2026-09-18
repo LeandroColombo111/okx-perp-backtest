@@ -25,9 +25,9 @@ def synthetic_bars(n_hours=24 * 220, seed=3) -> pd.DataFrame:
     trend = np.sin(np.linspace(0, 10, n_hours)) * 3000 + np.linspace(0, 4000, n_hours)
     noise = np.cumsum(rng.normal(0, 35, n_hours))
     close = 60000 + trend + noise
-    high = close + rng.uniform(10, 60, n_hours)
-    low = close - rng.uniform(10, 60, n_hours)
     openp = close + rng.normal(0, 15, n_hours)
+    high = np.maximum(openp, close) + rng.uniform(10, 60, n_hours)
+    low = np.minimum(openp, close) - rng.uniform(10, 60, n_hours)
     volume = rng.uniform(200, 800, n_hours)
     funding = np.zeros(n_hours)
     funding_instants = np.isin(idx.hour, [0, 8, 16]) & (idx.minute == 0)
