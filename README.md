@@ -111,7 +111,8 @@ Read these before trusting a number from this engine.
 - **Isolated margin only.** Cross margin raises `NotImplementedError` instead of
   being simulated badly.
 - **Regular fee tier only.** No VIP levels, rebates or token discounts.
-- **Funding uses the bar's open as the mark price**, an approximation.
+- **Funding uses the bar's open as the mark price**, an approximation. The OKX loader can only fetch about
+  the last 3 months of funding through the API.
 - **One instrument, one position at a time.** No portfolios or hedged legs.
 - **Monte Carlo resamples percentage returns on the original time skeleton.**
   Compounding-order effects are ignored, and the latency test only delays
@@ -132,7 +133,7 @@ In the order I would do them:
 3. Calibrate `impact_k` from real fills once a bot has enough of them.
 4. Cross margin and multi-position accounts.
 5. A BigQuery uploader for the report rows.
-6. A loader for OKX candles and funding history into the bar format above.
+6. ~~A loader for OKX candles and funding~~ (done: `okx_data.py`). Still open: funding older than ~3 months, which OKX only publishes as monthly archive files.
 
 ## Status
 
@@ -145,7 +146,7 @@ system, and nothing here places real orders.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q      # 44 tests
+python -m pytest -q      # 56 tests
 python examples/demo.py
 ```
 
@@ -155,7 +156,21 @@ Carlo → walk-forward → report.
 
 ## Use it with your own data and signal
 
-**1. Bars.** A `DataFrame` of 1h candles, indexed by the bar's **open** time in UTC:
+**1. Bars.** Get real OKX data with the built-in loader (public endpoints only, no account or API key):
+
+```bash
+python -m okx_perp_backtest.okx_data --inst BTC-USDT-SWAP --start 2026-07-01 --out btc_1h.csv
+```
+
+```python
+from okx_perp_backtest.okx_data import fetch_okx_bars
+bars = fetch_okx_bars("BTC-USDT-SWAP", start="2026-07-01", end="2026-09-01")   # already validated
+```
+
+Volume comes from OKX's `volCcy` (base currency), only completed candles are returned, and the funding API serves
+roughly the last 3 months: asking for older funding raises instead of silently filling zeros (pass
+`include_funding=False` to use `funding = 0`, or bring your own funding data). Or use your own bars, a `DataFrame` of
+1h candles indexed by the bar's **open** time in UTC:
 
 | column | meaning |
 |---|---|
@@ -194,6 +209,8 @@ When you compare variants in walk-forward, give every one the same `warmup` (see
 
 ```
 src/okx_perp_backtest/
+├── okx_data.py         # fetch_okx_bars + CLI: OKX candles and funding into the bar format (public data)
+├── okx_http.py         # minimal public-endpoint HTTP helper (no credentials)
 ├── data.py             # validate_bars / validate_signal: input checks with actionable errors
 ├── account.py          # Risk/Account dataclasses, position sizing, Sharpe/drawdown metrics
 ├── example_signal.py   # placeholder signal (NOT a production strategy)

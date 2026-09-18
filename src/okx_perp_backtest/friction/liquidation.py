@@ -12,21 +12,12 @@ liquidation price. That makes the estimate very slightly optimistic
 into available_margin here if that precision starts to matter.
 """
 from dataclasses import dataclass
-import json
 from typing import Literal
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+from ..okx_http import get_json as _get_json
 from .okx_tiers_snapshot import ROWS as SNAPSHOT_ROWS, SOURCE as SNAPSHOT_SOURCE
 
 MarginMode = Literal["isolated", "cross"]
-OKX_BASE = "https://www.okx.com"
-
-
-def _get_json(path: str, params: dict, timeout: float) -> dict:
-    request = Request(OKX_BASE + path + "?" + urlencode(params), headers={"User-Agent": "okx-perp-backtest"})
-    with urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode())
 
 
 @dataclass(frozen=True)
