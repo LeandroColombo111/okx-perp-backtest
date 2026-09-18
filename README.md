@@ -26,8 +26,9 @@ not enough evidence to risk capital on.
   are billed at the taker rate, as OKX does.
 - **Liquidation** as a distinct event from your strategy's own stop-loss:
   the exchange force-closes you when margin falls below a tiered maintenance
-  requirement, regardless of what your stop says. Isolated margin only, and the
-  tier table is a placeholder, not live OKX data (see Known limitations).
+  requirement, regardless of what your stop says. Tiers follow OKX's real
+  size-based table (a dated offline snapshot for BTC-USDT, or fetched live with
+  `PositionTiers.fetch_okx()`). Isolated margin only.
 
 ## What it answers beyond a single Sharpe number
 
@@ -101,10 +102,12 @@ Read these before trusting a number from this engine.
   own fills. In the author's BTC runs at 1x exposure the result barely moved
   between `impact_k=0` and `10`, but that will not hold for larger sizes or
   thinner markets.
-- **The liquidation tier table is a placeholder shape, not live OKX data.**
-  Refresh it from OKX before trusting a liquidation distance. It also ignores
-  the entry fee already paid, so liquidation looks marginally farther away than
-  it is.
+- **The default liquidation tier table is a dated snapshot** of OKX's BTC-USDT
+  tiers (see `friction/okx_tiers_snapshot.py`). OKX revises tiers, so call
+  `PositionTiers.fetch_okx()` for a fresh table before trusting a liquidation
+  distance, and pass `inst_id`/`inst_family` for other instruments. The
+  liquidation price also ignores the entry fee already paid, so it looks
+  marginally farther away than it is.
 - **Isolated margin only.** Cross margin raises `NotImplementedError` instead of
   being simulated badly.
 - **Regular fee tier only.** No VIP levels, rebates or token discounts.
@@ -124,7 +127,7 @@ Read these before trusting a number from this engine.
 
 In the order I would do them:
 
-1. Load OKX's position tiers from its public endpoint instead of the placeholder table.
+1. ~~Load OKX's position tiers from its public endpoint~~ (done: `PositionTiers.fetch_okx()`).
 2. A loader for OKX historical L2 book data, with explicit handling of the coverage gaps.
 3. Calibrate `impact_k` from real fills once a bot has enough of them.
 4. Cross margin and multi-position accounts.
@@ -141,7 +144,7 @@ system, and nothing here places real orders.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q      # 24 tests
+python -m pytest -q      # 30 tests
 python examples/demo.py
 ```
 
